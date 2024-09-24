@@ -89,12 +89,19 @@ function App() {
     const inputTensor = tf.tensor2d(monthYears, [monthYears.length, 1]);
     const labelTensor = tf.tensor2d([vch250gCost, sh250gCost, vChH250gCost,cdcH250gCost], [4, monthYears.length]);
 
+    const earlyStopping = tf.callbacks.earlyStopping({
+      monitor: 'loss',
+      patience: 10
+    })
+
     newModel.fit(inputTensor, labelTensor.transpose(), {
       epochs: 10000,
+      calidationSplit: 0.2,
       callbacks: {
         onEpochEnd: (epoch, logs) => {
           currentLossHistory.push(logs.loss);
-        }
+        },
+        ...[earlyStopping]
       }
     }).then(() => {
       console.log('Training complete');
@@ -128,7 +135,7 @@ function App() {
       kernelRegularizer: tf.regularizers.l2({l2: 0.01})
     }));
 
-    newModel.add(tf.layers.dropout({rate: 0.05}))
+    newModel.add(tf.layers.dropout({rate: 0.2}))
 
     newModel.add(tf.layers.dense({ 
       units: 16, 
@@ -136,7 +143,7 @@ function App() {
       kernelRegularizer: tf.regularizers.l2({l2: 0.01}) 
     }));
 
-    newModel.add(tf.layers.dropout({rate: 0.05}))
+    newModel.add(tf.layers.dropout({rate: 0.2}))
 
     newModel.add(tf.layers.dense({ units: 4 }));
     newModel.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
