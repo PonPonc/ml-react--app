@@ -65,6 +65,11 @@ function App() {
     return (parseInt(year) - 2022) * 12 + monthIndex;
   }
 
+  // Helper function for cost extraction
+  const getProductCosts = (productName) => 
+    costData.flatMap(entry => 
+      entry.products.filter(product => product.productName === productName).map(product => product.cost)
+    );
   // Initialize or retrain the model with the current dataset
   const initializeModel = () => {
     console.log("Currently training model, please wait for results...")
@@ -73,21 +78,10 @@ function App() {
     const currentLossHistory = [];
 
     // Extract costs for each product
-    const vch250gCost = costData.flatMap(entry => 
-      entry.products.filter(product => product.productName === 'VIRGINIA Cocktail Hotdog 250g').map(product => product.cost)
-    );
-
-    const sh250gCost = costData.flatMap(entry => 
-      entry.products.filter(product => product.productName === 'VIRGINIA Sweet Ham 250g').map(product => product.cost)
-    );
-
-    const vChH250gCost = costData.flatMap(entry => 
-      entry.products.filter(product => product.productName === 'VIRGINIA Chicken Hotdog 250g').map(product => product.cost)
-    );
-
-    const cdcH250gCost = costData.flatMap(entry => 
-      entry.products.filter(product => product.productName === 'VIRGINIA Chorizo de Cebu 250g').map(product => product.cost)
-    );
+    const vch250gCost = getProductCosts('VIRGINIA Cocktail Hotdog 250g')
+    const sh250gCost = getProductCosts('VIRGINIA Sweet Ham 250g')
+    const vChH250gCost = getProductCosts('VIRGINIA Chicken Hotdog 250g')
+    const cdcH250gCost = getProductCosts('VIRGINIA Chorizo de Cebu 250g')
 
     // Creating the model (or use an existing one)
     const newModel = model || createModel();
@@ -96,7 +90,7 @@ function App() {
     const labelTensor = tf.tensor2d([vch250gCost, sh250gCost, vChH250gCost,cdcH250gCost], [4, monthYears.length]);
 
     newModel.fit(inputTensor, labelTensor.transpose(), {
-      epochs: 100,
+      epochs: 10000,
       callbacks: {
         onEpochEnd: (epoch, logs) => {
           currentLossHistory.push(logs.loss);
@@ -105,6 +99,7 @@ function App() {
     }).then(() => {
       console.log('Training complete');
       console.log(JSON.stringify(newModel.toJSON()))
+      // newModel.evaluate()
       setModel(newModel); 
       setTrained(true);  
       setLossHistory(currentLossHistory);  
@@ -125,8 +120,24 @@ function App() {
   // Model Creation Function
   function createModel() {
     const newModel = tf.sequential();
-    newModel.add(tf.layers.dense({ units: 16, inputShape: [1], activation: 'relu' }));
-    newModel.add(tf.layers.dense({ units: 16, activation: 'relu' }));
+    // L2 regularization to the first dense layer
+    newModel.add(tf.layers.dense({ 
+      units: 16, 
+      inputShape: [1], 
+      activation: 'relu',
+      kernelRegularizer: tf.regularizers.l2({l2: 0.01})
+    }));
+
+    newModel.add(tf.layers.dropout({rate: 0.05}))
+
+    newModel.add(tf.layers.dense({ 
+      units: 16, 
+      activation: 'relu',
+      kernelRegularizer: tf.regularizers.l2({l2: 0.01}) 
+    }));
+
+    newModel.add(tf.layers.dropout({rate: 0.05}))
+
     newModel.add(tf.layers.dense({ units: 4 }));
     newModel.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
     return newModel;
