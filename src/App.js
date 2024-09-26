@@ -4,6 +4,8 @@ import Papa from 'papaparse';
 import _ from 'lodash';
 import * as tf from '@tensorflow/tfjs';
 
+tf.setBackend('webgl'); 
+
 function App() {
   const [costData, setCostData] = useState([]);
   const [model, setModel] = useState(null);  // Persist the model
@@ -65,6 +67,14 @@ function App() {
     return (parseInt(year) - 2022) * 12 + monthIndex;
   }
 
+  function measurePerformance(callback, label){
+    const start = performance.now()
+    return callback().then(()=> {
+      const end = performance.now()
+      console.log(`${label} took ${(end - start).toFixed(2)} milliseconds`)
+    })
+  }
+
   // Helper function for cost extraction
   const getProductCosts = (productName) => 
     costData.flatMap(entry => 
@@ -91,12 +101,14 @@ function App() {
 
     const earlyStopping = tf.callbacks.earlyStopping({
       monitor: 'loss',
-      patience: 10
+      patience: 5
     })
+
+    const startTime = performance.now();
 
     newModel.fit(inputTensor, labelTensor.transpose(), {
       epochs: 10000,
-      calidationSplit: 0.2,
+      validationSplit: 0.2,
       callbacks: {
         onEpochEnd: (epoch, logs) => {
           currentLossHistory.push(logs.loss);
@@ -104,7 +116,10 @@ function App() {
         ...[earlyStopping]
       }
     }).then(() => {
+      const endTime = performance.now();
+      const duration = (endTime - startTime) / 1000; // Convert to seconds
       console.log('Training complete');
+      console.log(`Model training complete in ${duration.toFixed(2)} seconds`);
       console.log(JSON.stringify(newModel.toJSON()))
       // newModel.evaluate()
       setModel(newModel); 
@@ -116,9 +131,15 @@ function App() {
   // Make predictions with the trained model
   const makePrediction = () => {
     if (trained && model) {
-      const prediction = model.predict(tf.tensor2d([[monthYearToNumber("January 2025")]]));
-      prediction.print();
-      console.log("Loss Value: " + lossHistory[lossHistory.length-1])
+      measurePerformance(() => {
+        const prediction = model.predict(tf.tensor2d([[monthYearToNumber("January 2025")]]));
+        const prediction_1 = model.predict(tf.tensor2d([[monthYearToNumber("February 2025")]]));
+        prediction.print();
+        prediction_1.print()
+        return prediction.array().then(() => {
+          console.log("Prediction complete");
+        });
+      }, "Model prediction");
     } else {
       console.log("Model is not yet trained.");
     }
@@ -135,6 +156,8 @@ function App() {
       kernelRegularizer: tf.regularizers.l2({l2: 0.01})
     }));
 
+    newModel.add(tf.layers.batchNormalization());
+
     newModel.add(tf.layers.dropout({rate: 0.2}))
 
     newModel.add(tf.layers.dense({ 
@@ -143,10 +166,12 @@ function App() {
       kernelRegularizer: tf.regularizers.l2({l2: 0.01}) 
     }));
 
+    newModel.add(tf.layers.batchNormalization());
+
     newModel.add(tf.layers.dropout({rate: 0.2}))
 
     newModel.add(tf.layers.dense({ units: 4 }));
-    newModel.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
+    newModel.compile({ optimizer: tf.train.adam(0.005), loss: 'meanSquaredError' });
     return newModel;
   }
 
